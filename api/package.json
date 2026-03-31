@@ -1,0 +1,11 @@
+{
+  "name": "dsp-lab-ai-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "test:generated": "node tests/generatedCases.test.mjs"
+  }
+}
