@@ -4463,8 +4463,7 @@ const SUB = {
   4: "y[n] = B0·x[n] + B1·x[n−1] − A1·y[n−1]  ·  SNR > 60 dB",
   5: "IEEE-754 encoding  ·  16-bit (Half) / 24-bit (Audio Extended) / 32-bit (Single)  ·  sign · exponent · mantissa · hex",
   6: "Qm.n fixed-point  ·  configurable integer & fractional bits  ·  two's complement  ·  range / resolution / error",
-  7: "Realtime microphone processing  ·  Gain / Hard Clip / 1st-order IIR  ·  live input/output waveform scopes",
-  8: "AI Copilot · Voice Agent · Auto-tuning · AI-generated DSP test cases",
+  7: "Realtime microphone processing  ·  Gain / Hard Clip / 1st-order IIR  ·  live scopes + floating AI copilot",
 };
 
 export default function DSPCalculator() {

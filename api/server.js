@@ -1,32 +1,15 @@
-import express from 'express';
-import cors from 'cors';
+import { createServer } from 'node:http';
 import { DSP_TOOLS } from '../shared/dspCore.js';
 
-const app = express();
-const port = process.env.PORT || 3001;
+const port = Number(process.env.PORT || 3001);
 const corsOrigin = process.env.CORS_ORIGIN || '*';
-
-app.use(cors({ origin: corsOrigin }));
-app.use(express.json({ limit: '1mb' }));
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
 const defaultArgs = {
   runA1: { freqHz: 1000, fsHz: 48000, amplitude: 0.8, nSamples: 64 },
   runA2: { freqHz: 1000, fsHz: 48000, amplitude: 0.8, nSamples: 64, gain: 1.25 },
   runA3: { freqHz: 1000, fsHz: 48000, nSamples: 64, clipLevel: 0.7 },
   runA4: { freqHz: 1000, fsHz: 48000, amplitude: 0.8, nSamples: 64, B0: 0.2929, B1: 0.2929, A1: 0.4142 }
-};
-
-const safeExecute = (tool, args = {}) => {
-  const fn = DSP_TOOLS[tool];
-  if (!fn) {
-    return { ok: false, error: `Unknown tool: ${tool}` };
-  }
-  try {
-    const merged = { ...(defaultArgs[tool] || {}), ...args };
-    return { ok: true, data: fn(merged), args: merged };
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
 };
 
 const parseIntent = (message = '') => {
@@ -40,19 +23,15 @@ const parseIntent = (message = '') => {
   return { tool: 'runA1', args: {} };
 };
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
-
-const controlSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    action: { type: 'string', enum: ['start', 'stop', 'reset', 'run_bench', 'set_mode', 'set_preset', 'set_source', 'toggle_monitor'] },
-    mode: { type: 'string', enum: ['gain', 'clip', 'iir', 'designer'] },
-    preset: { type: 'string' },
-    source: { type: 'string', enum: ['mic', 'file'] },
-    monitor: { type: 'boolean' }
-  },
-  required: ['action']
+const safeExecute = (tool, args = {}) => {
+  const fn = DSP_TOOLS[tool];
+  if (!fn) return { ok: false, error: `Unknown tool: ${tool}` };
+  try {
+    const merged = { ...(defaultArgs[tool] || {}), ...args };
+    return { ok: true, data: fn(merged), args: merged };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 };
 
 const toToolSchema = (name) => ({
@@ -87,7 +66,18 @@ const toolsForModel = [
     name: 'controlA7',
     description: 'Issue real-time control actions for Realtime Audio panel.',
     strict: true,
-    parameters: controlSchema
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        action: { type: 'string', enum: ['start', 'stop', 'reset', 'run_bench', 'set_mode', 'set_preset', 'set_source', 'toggle_monitor'] },
+        mode: { type: 'string', enum: ['gain', 'clip', 'iir', 'designer'] },
+        preset: { type: 'string' },
+        source: { type: 'string', enum: ['mic', 'file'] },
+        monitor: { type: 'boolean' }
+      },
+      required: ['action']
+    }
   }
 ];
 
@@ -110,18 +100,6 @@ const executeToolCalls = (toolCalls = []) => {
 
 const callOpenAI = async (message, realtimeState = {}) => {
   if (!process.env.OPENAI_API_KEY) return null;
-  const input = [
-    {
-      role: 'system',
-      content:
-        'You are DSP Lab Copilot. Prefer tool-calls. Use controlA7 when user asks to start/stop/reset/change realtime audio. Keep responses concise and practical.'
-    },
-    {
-      role: 'user',
-      content: `User message: ${message}\nRealtime state: ${JSON.stringify(realtimeState)}`
-    }
-  ];
-
   const resp = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -130,7 +108,17 @@ const callOpenAI = async (message, realtimeState = {}) => {
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
-      input,
+      input: [
+        {
+          role: 'system',
+          content:
+            'You are DSP Lab Copilot. Prefer tool-calls. Use controlA7 when user asks to start/stop/reset/change realtime audio. Keep responses concise and practical.'
+        },
+        {
+          role: 'user',
+          content: `User message: ${message}\nRealtime state: ${JSON.stringify(realtimeState)}`
+        }
+      ],
       tools: toolsForModel
     })
   });
@@ -153,42 +141,86 @@ const callOpenAI = async (message, realtimeState = {}) => {
   return { text, toolCalls, model: data.model };
 };
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'dsp-lab-ai-api' });
-});
+const json = (res, status, body) => {
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': corsOrigin,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.end(JSON.stringify(body));
+};
 
-app.post('/ai/chat', (req, res) => {
-  const message = req.body?.message || '';
-  const realtimeState = req.body?.realtimeState || {};
-  const fallback = () => {
-    const intent = parseIntent(message);
-    if (intent.tool === 'controlA7') {
-      return res.json({
+const readJsonBody = (req) =>
+  new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 1_000_000) {
+        reject(new Error('Payload too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error('Invalid JSON'));
+      }
+    });
+    req.on('error', reject);
+  });
+
+const server = createServer(async (req, res) => {
+  if (!req.url) return json(res, 404, { ok: false, error: 'Not found' });
+  if (req.method === 'OPTIONS') return json(res, 204, {});
+
+  if (req.method === 'GET' && req.url === '/health') {
+    return json(res, 200, { ok: true, service: 'dsp-lab-ai-api' });
+  }
+
+  if (req.method !== 'POST') return json(res, 404, { ok: false, error: 'Not found' });
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    return json(res, 400, { ok: false, error: error.message });
+  }
+
+  if (req.url === '/ai/chat') {
+    const message = body?.message || '';
+    const realtimeState = body?.realtimeState || {};
+    const fallback = () => {
+      const intent = parseIntent(message);
+      if (intent.tool === 'controlA7') {
+        return json(res, 200, {
+          ok: true,
+          provider: 'local-rule',
+          model: null,
+          controls: [intent.args],
+          dsp: [],
+          assistant: `Queued realtime action: ${intent.args.action}.`
+        });
+      }
+      const exec = safeExecute(intent.tool, intent.args);
+      if (!exec.ok) return json(res, 400, exec);
+      return json(res, 200, {
         ok: true,
         provider: 'local-rule',
         model: null,
-        controls: [intent.args],
-        dsp: [],
-        assistant: `Queued realtime action: ${intent.args.action}.`
+        controls: [],
+        dsp: [{ tool: intent.tool, args: exec.args, result: exec.data }],
+        assistant: `Executed ${intent.tool}. Pass=${exec.data.pass ? 'yes' : 'no'}, MAE=${exec.data.mae?.toExponential?.(3) ?? 'n/a'}${exec.data.snr ? `, SNR=${exec.data.snr.toFixed(2)} dB` : ''}.`
       });
-    }
-    const exec = safeExecute(intent.tool, intent.args);
-    if (!exec.ok) return res.status(400).json(exec);
-    return res.json({
-      ok: true,
-      provider: 'local-rule',
-      model: null,
-      controls: [],
-      dsp: [{ tool: intent.tool, args: exec.args, result: exec.data }],
-      assistant: `Executed ${intent.tool}. Pass=${exec.data.pass ? 'yes' : 'no'}, MAE=${exec.data.mae?.toExponential?.(3) ?? 'n/a'}${exec.data.snr ? `, SNR=${exec.data.snr.toFixed(2)} dB` : ''}.`
-    });
-  };
+    };
 
-  callOpenAI(message, realtimeState)
-    .then((ai) => {
+    try {
+      const ai = await callOpenAI(message, realtimeState);
       if (!ai) return fallback();
       const exec = executeToolCalls(ai.toolCalls);
-      res.json({
+      return json(res, 200, {
         ok: true,
         provider: 'openai',
         model: ai.model || OPENAI_MODEL,
@@ -196,43 +228,56 @@ app.post('/ai/chat', (req, res) => {
         dsp: exec.dsp,
         assistant: ai.text || 'Done. I applied the requested controls and DSP checks.'
       });
-    })
-    .catch(() => fallback());
+    } catch {
+      return fallback();
+    }
+  }
+
+  if (req.url === '/ai/recommend') {
+    const goal = (body?.goal || 'maximize_snr').toLowerCase();
+    const candidates = [0.7, 0.9, 1.0, 1.15, 1.3, 1.5].map((gain) => {
+      const out = safeExecute('runA2', { gain });
+      return { gain, ...out.data };
+    });
+    const sorted = [...candidates].sort((a, b) => (goal.includes('mae') ? a.mae - b.mae : b.snr - a.snr));
+    return json(res, 200, { ok: true, goal, top: sorted.slice(0, 3), all: candidates });
+  }
+
+  if (req.url === '/ai/testcases/generate') {
+    const count = Math.min(100, Math.max(5, Number(body?.count || 20)));
+    const tests = Array.from({ length: count }, (_, i) => ({
+      id: `edge-${i + 1}`,
+      tool: i % 2 === 0 ? 'runA2' : 'runA3',
+      args:
+        i % 2 === 0
+          ? { gain: Number((0.6 + (i % 10) * 0.12).toFixed(2)), nSamples: 64 }
+          : { clipLevel: Number((0.3 + (i % 10) * 0.06).toFixed(2)), nSamples: 64 },
+      expectation: i % 2 === 0 ? 'mae_below_0.001' : 'pass_true'
+    }));
+    return json(res, 200, { ok: true, tests });
+  }
+
+  if (req.url === '/ai/voice/transcribe') {
+    const transcript = body?.transcript || '';
+    return json(res, 200, {
+      ok: true,
+      transcript,
+      note: 'Local stub endpoint: wire external STT provider for production.'
+    });
+  }
+
+  if (req.url === '/ai/voice/speak') {
+    const text = body?.text || '';
+    return json(res, 200, {
+      ok: true,
+      text,
+      note: 'Use browser SpeechSynthesis locally; wire TTS provider for deployment if needed.'
+    });
+  }
+
+  return json(res, 404, { ok: false, error: 'Not found' });
 });
 
-app.post('/ai/recommend', (req, res) => {
-  const goal = (req.body?.goal || 'maximize_snr').toLowerCase();
-  const candidates = [0.7, 0.9, 1.0, 1.15, 1.3, 1.5].map((gain) => {
-    const out = safeExecute('runA2', { gain });
-    return { gain, ...out.data };
-  });
-  const sorted = [...candidates].sort((a, b) => goal.includes('mae') ? a.mae - b.mae : b.snr - a.snr);
-  res.json({ ok: true, goal, top: sorted.slice(0, 3), all: candidates });
-});
-
-app.post('/ai/testcases/generate', (req, res) => {
-  const count = Math.min(100, Math.max(5, Number(req.body?.count || 20)));
-  const tests = Array.from({ length: count }, (_, i) => ({
-    id: `edge-${i + 1}`,
-    tool: i % 2 === 0 ? 'runA2' : 'runA3',
-    args: i % 2 === 0
-      ? { gain: Number((0.6 + (i % 10) * 0.12).toFixed(2)), nSamples: 64 }
-      : { clipLevel: Number((0.3 + (i % 10) * 0.06).toFixed(2)), nSamples: 64 },
-    expectation: i % 2 === 0 ? 'mae_below_0.001' : 'pass_true'
-  }));
-  res.json({ ok: true, tests });
-});
-
-app.post('/ai/voice/transcribe', (req, res) => {
-  const transcript = req.body?.transcript || '';
-  res.json({ ok: true, transcript, note: 'Local stub endpoint: wire external STT provider for production.' });
-});
-
-app.post('/ai/voice/speak', (req, res) => {
-  const text = req.body?.text || '';
-  res.json({ ok: true, text, note: 'Use browser SpeechSynthesis locally; wire TTS provider for deployment if needed.' });
-});
-
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`DSP Lab AI API listening on :${port}`);
 });

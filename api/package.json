@@ -7,9 +7,5 @@
     "dev": "node --watch server.js",
     "start": "node server.js",
     "test:generated": "node tests/generatedCases.test.mjs"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.2"
   }
 }
