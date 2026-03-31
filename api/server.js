@@ -13,11 +13,50 @@ const defaultArgs = {
   runA4: { freqHz: 1000, fsHz: 48000, amplitude: 0.8, nSamples: 64, B0: 0.2929, B1: 0.2929, A1: 0.4142 }
 };
 
-const parseIntent = (message = '') => {
-  const m = message.toLowerCase();
+const normalize = (message = '') => message.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const parseControlIntent = (message = '') => {
+  const m = normalize(message);
+  if (!m) return null;
   if (m.includes('start')) return { tool: 'controlA7', args: { action: 'start' } };
   if (m.includes('stop')) return { tool: 'controlA7', args: { action: 'stop' } };
   if (m.includes('reset')) return { tool: 'controlA7', args: { action: 'reset' } };
+    if (m.includes('bench')) return { tool: 'controlA7', args: { action: 'run_bench' } };
+
+  if (m.includes('set mode gain') || m.includes('mode gain')) return { tool: 'controlA7', args: { action: 'set_mode', mode: 'gain' } };
+  if (m.includes('set mode clip') || m.includes('mode clip') || m.includes('hard clip')) {
+    return { tool: 'controlA7', args: { action: 'set_mode', mode: 'clip' } };
+  }
+  if (m.includes('set mode iir') || m.includes('mode iir')) return { tool: 'controlA7', args: { action: 'set_mode', mode: 'iir' } };
+  if (m.includes('set mode designer') || m.includes('mode designer') || m.includes('set mode filter')) {
+    return { tool: 'controlA7', args: { action: 'set_mode', mode: 'designer' } };
+  }
+
+  if (m.includes('set lo fi') || m.includes('set lofi') || m.includes('lo fi clip') || m.includes('lofi clip')) {
+    return { tool: 'controlA7', args: { action: 'set_preset', preset: 'lofi' } };
+  }
+  if (m.includes('speech')) return { tool: 'controlA7', args: { action: 'set_preset', preset: 'speech' } };
+  if (m.includes('podcast')) return { tool: 'controlA7', args: { action: 'set_preset', preset: 'podcast' } };
+  if (m.includes('phone') || m.includes('telephone')) return { tool: 'controlA7', args: { action: 'set_preset', preset: 'phone' } };
+  if (m.includes('hum')) return { tool: 'controlA7', args: { action: 'set_preset', preset: 'hum' } };
+  if (m.includes('stable')) return { tool: 'controlA7', args: { action: 'set_preset', preset: 'stable' } };
+  if (m.includes('bright')) return { tool: 'controlA7', args: { action: 'set_preset', preset: 'bright' } };
+
+  if (m.includes('source mic') || m.includes('use mic') || m.includes('microphone')) {
+    return { tool: 'controlA7', args: { action: 'set_source', source: 'mic' } };
+  }
+  if (m.includes('source file') || m.includes('use file')) return { tool: 'controlA7', args: { action: 'set_source', source: 'file' } };
+
+  if (m.includes('monitor on') || m.includes('unmute monitor')) return { tool: 'controlA7', args: { action: 'toggle_monitor', monitor: true } };
+  if (m.includes('monitor off') || m.includes('mute monitor')) return { tool: 'controlA7', args: { action: 'toggle_monitor', monitor: false } };
+
+  return null;
+};
+
+const parseIntent = (message = '') => {
+  const control = parseControlIntent(message);
+  if (control) return control;
+  const m = normalize(message);
   if (m.includes('clip')) return { tool: 'runA3', args: { clipLevel: 0.6 } };
   if (m.includes('gain')) return { tool: 'runA2', args: { gain: 1.3 } };
   if (m.includes('filter') || m.includes('iir')) return { tool: 'runA4', args: {} };
@@ -99,6 +138,40 @@ const executeToolCalls = (toolCalls = []) => {
   return { control, dsp };
 };
 
+const sameControl = (a = {}, b = {}) =>
+  a.action === b.action && a.mode === b.mode && a.preset === b.preset && a.source === b.source && a.monitor === b.monitor;
+
+const mergeToolCalls = (forcedControl, toolCalls = []) => {
+  if (!forcedControl) return toolCalls;
+  const forcedCall = { name: 'controlA7', arguments: forcedControl.args || {} };
+  const hasSame = toolCalls.some((call) => call?.name === 'controlA7' && sameControl(call.arguments || {}, forcedCall.arguments));
+  return hasSame ? toolCalls : [forcedCall, ...toolCalls];
+};
+
+const describeControl = (args = {}) => {
+  if (args.action === 'set_mode' && args.mode) return `Queued realtime action: set_mode (${args.mode}).`;
+  if (args.action === 'set_preset' && args.preset) return `Queued realtime action: set_preset (${args.preset}).`;
+  if (args.action === 'set_source' && args.source) return `Queued realtime action: set_source (${args.source}).`;
+  if (args.action === 'toggle_monitor') return `Queued realtime action: toggle_monitor (${args.monitor ? 'on' : 'off'}).`;
+  return `Queued realtime action: ${args.action || 'unknown'}.`;
+};
+
+const isQuestionLike = (message = '') => {
+  const m = normalize(message);
+  return message.includes('?') || /^(why|how|what|when|where|which|can you|could you|explain)\b/.test(m) || m.includes(' explain ');
+};
+
+const localQuestionAnswer = (message = '', realtimeState = {}) => {
+  const m = normalize(message);
+  if (m.includes('distort') || m.includes('clipp')) {
+    return 'Distortion usually means clipping or too much gain. Try clip mode with a higher clip level, or reduce gain. If realtime is running, compare input/output levels to confirm overload.';
+  }
+  if (m.includes('snr')) return 'Higher SNR usually comes from moderate gain, avoiding clipping, and reducing noise (HPF/notch/gate presets can help).';
+  if (m.includes('preset')) return 'Use commands like: set lo-fi clip, set podcast preset, or set speech preset. I can also switch mode/source directly.';
+  if (realtimeState?.isRunning) return `Realtime is running in ${realtimeState.mode || 'unknown'} mode. Ask me to change mode/preset/source or run a benchmark.`;
+  return 'I can answer DSP questions and control realtime audio. Try: "start realtime", "set lo-fi clip", "set mode designer", or ask "why is my signal distorted?"';
+};
+
 const callOpenAI = async (message, realtimeState = {}) => {
   if (!process.env.AI_API_KEY) return null;
   const resp = await fetch(`${AI_BASE_URL}/responses`, {
@@ -113,7 +186,7 @@ const callOpenAI = async (message, realtimeState = {}) => {
         {
           role: 'system',
           content:
-            'You are DSP Lab Copilot. Prefer tool-calls. Use controlA7 when user asks to start/stop/reset/change realtime audio. Keep responses concise and practical.'
+            'You are DSP Lab Copilot. Prefer tool-calls. Use controlA7 for realtime control (start/stop/reset, set_mode, set_preset, set_source, toggle_monitor). If user asks for lo-fi, use set_preset with preset="lofi". If user asks a question, answer it clearly while still issuing needed tool-calls. Keep responses concise and practical.'
         },
         {
           role: 'user',
@@ -196,16 +269,28 @@ const server = createServer(async (req, res) => {
   if (req.url === '/ai/chat') {
     const message = body?.message || '';
     const realtimeState = body?.realtimeState || {};
+    const controlIntent = parseControlIntent(message);
     const fallback = () => {
       const intent = parseIntent(message);
-      if (intent.tool === 'controlA7') {
+      if (intent.tool === 'controlA7' || controlIntent?.tool === 'controlA7') {
+        const args = controlIntent?.args || intent.args;
         return json(res, 200, {
           ok: true,
           provider: 'local-rule',
           model: null,
-          controls: [intent.args],
+          controls: [args],
           dsp: [],
-          assistant: `Queued realtime action: ${intent.args.action}.`
+          assistant: describeControl(args)
+        });
+      }
+      if (isQuestionLike(message)) {
+        return json(res, 200, {
+          ok: true,
+          provider: 'local-rule',
+          model: null,
+          controls: [],
+          dsp: [],
+          assistant: localQuestionAnswer(message, realtimeState)
         });
       }
       const exec = safeExecute(intent.tool, intent.args);
@@ -223,14 +308,15 @@ const server = createServer(async (req, res) => {
     try {
       const ai = await callOpenAI(message, realtimeState);
       if (!ai) return fallback();
-      const exec = executeToolCalls(ai.toolCalls);
+      const toolCalls = mergeToolCalls(controlIntent, ai.toolCalls);
+      const exec = executeToolCalls(toolCalls);
       return json(res, 200, {
         ok: true,
         provider: 'openai',
         model: ai.model,
         controls: exec.control,
         dsp: exec.dsp,
-        assistant: ai.text || 'Done. I applied the requested controls and DSP checks.'
+        assistant: ai.text || (controlIntent ? describeControl(controlIntent.args) : 'Done. I applied the requested controls and DSP checks.')
       });
     } catch {
       return fallback();
