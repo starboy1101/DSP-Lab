@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import AILabView from "./components/AILabView";
 
 const Q15_MAX = 32767,
   Q15_MIN = -32768,
@@ -4344,6 +4345,7 @@ const TABS = [
   { id: 5, tag: "A5", title: "IEEE-754", color: "#facc15" },
   { id: 6, tag: "A6", title: "Qm.n Format", color: "#38bdf8" },
   { id: 7, tag: "A7", title: "Realtime Audio", color: "#38bdf8" },
+  { id: 8, tag: "AI", title: "AI Copilot", color: "#a78bfa" },
 ];
 const SUB = {
   1: "Float → Q15 → Float  ·  ½ LSB error  ·  Banker's rounding",
@@ -4353,6 +4355,7 @@ const SUB = {
   5: "IEEE-754 encoding  ·  16-bit (Half) / 24-bit (Audio Extended) / 32-bit (Single)  ·  sign · exponent · mantissa · hex",
   6: "Qm.n fixed-point  ·  configurable integer & fractional bits  ·  two's complement  ·  range / resolution / error",
   7: "Realtime microphone processing  ·  Gain / Hard Clip / 1st-order IIR  ·  live input/output waveform scopes",
+  8: "AI Copilot · Voice Agent · Auto-tuning · AI-generated DSP test cases",
 };
 
 export default function DSPCalculator() {
@@ -4474,6 +4477,7 @@ export default function DSPCalculator() {
           {tab === 5 && <A5View />}
           {tab === 6 && <A6View />}
           {tab === 7 && <RealtimeAudioLab />}
+          {tab === 8 && <AILabView />}
         </div>
         <div
           style={{
