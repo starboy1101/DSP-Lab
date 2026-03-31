@@ -3,7 +3,7 @@ import { DSP_TOOLS } from '../shared/dspCore.js';
 
 const port = Number(process.env.PORT || 3001);
 const corsOrigin = process.env.CORS_ORIGIN || '*';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'DeepSeek-V3.1-cb';
 
 const defaultArgs = {
   runA1: { freqHz: 1000, fsHz: 48000, amplitude: 0.8, nSamples: 64 },
@@ -100,7 +100,7 @@ const executeToolCalls = (toolCalls = []) => {
 
 const callOpenAI = async (message, realtimeState = {}) => {
   if (!process.env.OPENAI_API_KEY) return null;
-  const resp = await fetch('https://api.openai.com/v1/responses', {
+  const resp = await fetch('https://api.sambanova.ai/v1', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,

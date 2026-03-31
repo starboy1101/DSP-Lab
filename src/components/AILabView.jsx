@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-const API_URL = import.meta.env.VITE_AI_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_AI_API_URL || '';
 
 const shell = {
   border: '1px solid #173422',
@@ -36,7 +36,8 @@ export default function AILabView({ floating = false, onControlCommand, realtime
   const canUseSpeech = useMemo(() => typeof window !== 'undefined' && 'webkitSpeechRecognition' in window, []);
 
   const post = async (path, body) => {
-    const res = await fetch(`${API_URL}${path}`, {
+    const target = `${API_URL}${path}`;
+    const res = await fetch(target, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -61,7 +62,13 @@ export default function AILabView({ floating = false, onControlCommand, realtime
       if (Array.isArray(out.dsp) && out.dsp.length) details.push(`DSP checks: ${out.dsp.map((d) => d.tool).join(', ')}`);
       setChatLog((prev) => [...prev, { role: 'assistant', text: `${out.assistant}\n${details.join(' · ')}`.trim() }]);
     } catch (error) {
-      setChatLog((prev) => [...prev, { role: 'assistant', text: `Error: ${error.message}` }]);
+      setChatLog((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: `Error: ${error.message}\nTip: start API with \"npm run dev:api\" or set VITE_AI_API_URL=http://localhost:3001`
+        }
+      ]);
     } finally {
       setBusy(false);
     }

@@ -4454,7 +4454,7 @@ const TABS = [
   { id: 5, tag: "A5", title: "IEEE-754", color: "#facc15" },
   { id: 6, tag: "A6", title: "Qm.n Format", color: "#38bdf8" },
   { id: 7, tag: "A7", title: "Realtime Audio", color: "#38bdf8" },
-  { id: 8, tag: "AI", title: "AI Copilot", color: "#a78bfa" },
+  // { id: 8, tag: "AI", title: "AI Copilot", color: "#a78bfa" },
 ];
 const SUB = {
   1: "Float → Q15 → Float  ·  ½ LSB error  ·  Banker's rounding",
