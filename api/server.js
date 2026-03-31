@@ -3,7 +3,8 @@ import { DSP_TOOLS } from '../shared/dspCore.js';
 
 const port = Number(process.env.PORT || 3001);
 const corsOrigin = process.env.CORS_ORIGIN || '*';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'DeepSeek-V3.1-cb';
+const AI_MODEL = process.env.AI_MODEL;
+const AI_BASE_URL = process.env.AI_BASE_URL;
 
 const defaultArgs = {
   runA1: { freqHz: 1000, fsHz: 48000, amplitude: 0.8, nSamples: 64 },
@@ -99,15 +100,15 @@ const executeToolCalls = (toolCalls = []) => {
 };
 
 const callOpenAI = async (message, realtimeState = {}) => {
-  if (!process.env.OPENAI_API_KEY) return null;
-  const resp = await fetch('https://api.sambanova.ai/v1', {
+  if (!process.env.AI_API_KEY) return null;
+  const resp = await fetch(`${AI_BASE_URL}/responses`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${process.env.AI_API_KEY}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model: AI_MODEL,
       input: [
         {
           role: 'system',
@@ -122,7 +123,10 @@ const callOpenAI = async (message, realtimeState = {}) => {
       tools: toolsForModel
     })
   });
-  if (!resp.ok) throw new Error(`OpenAI request failed: ${resp.status}`);
+  if (!resp.ok) {
+    const detail = await resp.text();
+    throw new Error(`AI request failed: ${resp.status}${detail ? ` ${detail}` : ''}`);
+  }
   const data = await resp.json();
   const outputs = Array.isArray(data.output) ? data.output : [];
   const toolCalls = outputs
@@ -223,7 +227,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         provider: 'openai',
-        model: ai.model || OPENAI_MODEL,
+        model: ai.model,
         controls: exec.control,
         dsp: exec.dsp,
         assistant: ai.text || 'Done. I applied the requested controls and DSP checks.'
