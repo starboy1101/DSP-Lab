@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:api": "npm run dev --prefix api",
+    "dev:all": "bash ./scripts/dev-all.sh"
   },
   "dependencies": {
     "react": "^19.2.4",
