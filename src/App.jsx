@@ -2879,6 +2879,8 @@ const RealtimeAudioLab = () => {
   const [benchSeed, setBenchSeed] = useState(12345);
   const [freezeSeed, setFreezeSeed] = useState(true);
   const [benchRes, setBenchRes] = useState(null);
+  const [aiDockOpen, setAiDockOpen] = useState(true);
+  const [aiPos, setAiPos] = useState({ x: 24, y: 24 });
 
   const inCanvasRef = useRef(null);
   const outCanvasRef = useRef(null);
@@ -3607,6 +3609,46 @@ const RealtimeAudioLab = () => {
     transferRef.current = [];
   };
 
+  const runA7AiCommand = async (cmd = {}) => {
+    const action = cmd?.action;
+    if (!action) return;
+    if (action === "start") {
+      if (!isRunning) await startAudio();
+      return;
+    }
+    if (action === "stop") {
+      if (isRunning) stopAudio();
+      return;
+    }
+    if (action === "reset") {
+      resetA7();
+      return;
+    }
+    if (action === "run_bench") {
+      await runBench();
+      return;
+    }
+    if (action === "set_mode" && cmd.mode) {
+      setMode(cmd.mode);
+      setActivePreset("custom");
+      return;
+    }
+    if (action === "set_preset" && cmd.preset && PRESETS[cmd.preset]) {
+      applyPreset(cmd.preset);
+      return;
+    }
+    if (action === "set_source" && cmd.source) {
+      setSourceMode(cmd.source);
+      setActivePreset("custom");
+      return;
+    }
+    if (action === "toggle_monitor") {
+      setMonitor((prev) =>
+        typeof cmd.monitor === "boolean" ? cmd.monitor : !prev,
+      );
+    }
+  };
+
   const beginAutoCapture = () => {
     const a = audioRef.current;
     if (!a.recordDest) return;
@@ -3816,7 +3858,7 @@ const RealtimeAudioLab = () => {
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
       <Panel style={{ borderColor: `${C.info}22` }}>
         <div
           style={{
@@ -4311,6 +4353,73 @@ const RealtimeAudioLab = () => {
           </div>
         </div>
       </Panel>
+      <div
+        style={{
+          position: "fixed",
+          left: aiPos.x,
+          top: aiPos.y,
+          width: aiDockOpen ? 360 : 170,
+          zIndex: 999,
+          background: "#050e09",
+          border: `1px solid ${C.info}55`,
+          borderRadius: 10,
+          boxShadow: "0 12px 34px rgba(0,0,0,0.45)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            background: "#03120a",
+            borderBottom: `1px solid ${C.border}`,
+            padding: "8px 10px",
+            cursor: "move",
+            userSelect: "none",
+            fontFamily: mono,
+            fontSize: 10,
+            color: C.info,
+            letterSpacing: 1.2,
+          }}
+          onMouseDown={(ev) => {
+            const startX = ev.clientX;
+            const startY = ev.clientY;
+            const base = { ...aiPos };
+            const onMove = (mv) => {
+              setAiPos({
+                x: Math.max(4, base.x + mv.clientX - startX),
+                y: Math.max(4, base.y + mv.clientY - startY),
+              });
+            };
+            const onUp = () => {
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+          }}
+        >
+          <span>A7 Floating AI Copilot</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => setAiDockOpen((v) => !v)}
+              style={{ background: "transparent", color: C.info, border: `1px solid ${C.info}55`, borderRadius: 4, fontSize: 10, cursor: "pointer" }}
+            >
+              {aiDockOpen ? "−" : "+"}
+            </button>
+          </div>
+        </div>
+        {aiDockOpen && (
+          <div style={{ padding: 8 }}>
+            <AILabView
+              floating
+              onControlCommand={runA7AiCommand}
+              realtimeState={{ isRunning, status, mode, sourceMode, monitor, activePreset }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

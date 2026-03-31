@@ -32,6 +32,13 @@ Set optional API URL in frontend `.env`:
 VITE_AI_API_URL=http://localhost:3001
 ```
 
+Set optional backend AI provider env in `api/.env`:
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4.1-mini
+```
+If no API key is set, `/ai/chat` falls back to local deterministic intent rules.
+
 ## Deployment
 
 - Deploy web app to Vercel/Netlify.
@@ -50,4 +57,4 @@ VITE_AI_API_URL=http://localhost:3001
 
 ## Notes
 
-This is intentionally deterministic and local-first: the API currently uses DSP tools directly from `shared/dspCore.js` rather than a remote LLM call, so it can run offline and be deployed immediately. You can layer an LLM provider later while keeping the deterministic tool execution path.
+This keeps deterministic DSP execution (`shared/dspCore.js`) as the trusted path. When `OPENAI_API_KEY` is present, `/ai/chat` uses OpenAI tool-calling and then executes only allowed local DSP/control tools.

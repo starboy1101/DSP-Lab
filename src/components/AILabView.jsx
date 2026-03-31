@@ -9,8 +9,8 @@ const section = {
   background: '#040d07'
 };
 
-export default function AILabView() {
-  const [message, setMessage] = useState('Run gain scenario and explain if quality is acceptable.');
+export default function AILabView({ floating = false, onControlCommand, realtimeState }) {
+  const [message, setMessage] = useState('Start realtime mode, then run gain scenario and explain quality.');
   const [chatOut, setChatOut] = useState(null);
   const [goal, setGoal] = useState('maximize_snr');
   const [recommendOut, setRecommendOut] = useState(null);
@@ -33,8 +33,11 @@ export default function AILabView() {
   const runCopilot = async () => {
     setBusy(true);
     try {
-      const out = await post('/ai/chat', { message });
+      const out = await post('/ai/chat', { message, realtimeState });
       setChatOut(out);
+      if (Array.isArray(out.controls) && onControlCommand) {
+        out.controls.forEach((c) => onControlCommand(c));
+      }
     } finally {
       setBusy(false);
     }
@@ -81,9 +84,9 @@ export default function AILabView() {
   };
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 12, maxHeight: floating ? '72vh' : 'none', overflow: 'auto' }}>
       <div style={section}>
-        <div style={{ color: '#5fffa0', fontWeight: 700, marginBottom: 6 }}>AI DSP Copilot (Idea #1)</div>
+        <div style={{ color: '#5fffa0', fontWeight: 700, marginBottom: 6 }}>AI DSP Copilot (Idea #1 + realtime control)</div>
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} style={{ width: '100%', background: '#020704', color: '#a8e8c0', border: '1px solid #0f2416', borderRadius: 6, padding: 8 }} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           <button onClick={runCopilot} disabled={busy}>Run Copilot</button>
